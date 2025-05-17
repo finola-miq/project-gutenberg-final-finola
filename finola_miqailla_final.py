@@ -13,9 +13,11 @@ from typing import List, Tuple
 
 # --- Database Setup ---
 
+# connect to sqlite database and set up cursor
 conn = sqlite3.connect('project_gutenberg.db')
 cursor = conn.cursor()
 
+# create book table if it doesn't exist
 cursor.execute('''
 CREATE TABLE IF NOT EXISTS book (
     id INTEGER PRIMARY KEY,
@@ -24,7 +26,7 @@ CREATE TABLE IF NOT EXISTS book (
 )
 ''')
 
-
+# create word frequencies table if it doesn't exist
 cursor.execute('''
 CREATE TABLE IF NOT EXISTS word_frequencies (
     id INTEGER PRIMARY KEY,
@@ -38,6 +40,7 @@ CREATE TABLE IF NOT EXISTS word_frequencies (
 # --- HTML Parsing ---
 
 class MyHTMLParser(HTMLParser):
+    """parses html text to find words and extract book title"""
     def __init__(self):
         super().__init__()
         self.words = []
@@ -45,6 +48,7 @@ class MyHTMLParser(HTMLParser):
         self.title_found = False
 
     def handle_data(self, data):
+        # extract title if not already found
         if not self.title_found and "title:" in data:
             match = re.search(r"title:\s*(.+)", data, re.IGNORECASE)
             if match:
@@ -52,26 +56,24 @@ class MyHTMLParser(HTMLParser):
                 self.extracted_title = extracted
                 self.title_found = True
 
-
-        # Collect all words
+        # collect all words in lowercase
         self.words.extend(re.findall(r'\b\w+\b', data.lower()))
-
 
 # --- Database Functions ---
 
 def insert_book(title, link):
+    """adds book info to db if not already present and returns its id"""
     cursor.execute("SELECT id FROM book WHERE title = ? AND link = ?", (title, link))
     result = cursor.fetchone()
     if result:
-        return result[0]  # Return existing book ID
+        return result[0]  # return existing book ID
     else:
         cursor.execute("INSERT INTO book VALUES (NULL, ?, ?)", (title, link))
         conn.commit()
         return cursor.lastrowid
 
-
-
 def insert_word_frequencies(book_id: int, frequencies: List[Tuple[str, int]]):
+    """stores top word frequencies in db linked to a book"""
     cursor.execute("DELETE FROM word_frequencies WHERE book_id = ?", (book_id,))
     cursor.executemany(
         "INSERT INTO word_frequencies (book_id, word, frequency) VALUES (?, ?, ?)",
@@ -80,6 +82,7 @@ def insert_word_frequencies(book_id: int, frequencies: List[Tuple[str, int]]):
     conn.commit()
 
 def fetch_frequencies_by_title(title: str) -> List[Tuple[str, int]]:
+    """gets top 10 word frequencies for a book title from db"""
     cursor.execute("SELECT id FROM book WHERE title = ?", (title,))
     result = cursor.fetchone()
     if not result:
@@ -97,6 +100,7 @@ def fetch_frequencies_by_title(title: str) -> List[Tuple[str, int]]:
 # --- GUI Functionality ---
 
 def display_results(results: List[Tuple[str, int]]):
+    """displays word frequency results in text box"""
     results_box.delete("1.0", tk.END)
     if not results:
         results_box.insert(tk.END, "No results to display.")
@@ -105,6 +109,7 @@ def display_results(results: List[Tuple[str, int]]):
             results_box.insert(tk.END, f"{word}: {freq}\n")
 
 def search_local_title():
+    """searches word frequency by book title from local db"""
     title = title_entry.get().strip()
     if not title:
         messagebox.showwarning("Input Error", "Please enter a book title.")
@@ -116,6 +121,7 @@ def search_local_title():
         messagebox.showinfo("Not Found", "Book was not found in the local database.")
 
 def search_url_and_store():
+    """fetches html from url, extracts title and words, stores results"""
     link = url_entry.get().strip()
     if not link:
         messagebox.showwarning("Input Error", "Please enter a URL.")
@@ -130,14 +136,14 @@ def search_url_and_store():
 
         title = parser.extracted_title if parser.title_found else "Unknown Title"
 
-        # Count word frequencies
+        # count word frequencies
         freq = {}
         for word in parser.words:
             freq[word] = freq.get(word, 0) + 1
 
         top_10 = sorted(freq.items(), key=lambda x: x[1], reverse=True)[:10]
 
-        # Now pass the extracted title and link into insert_book
+        # store to db
         book_id = insert_book(title, link)
         insert_word_frequencies(book_id, top_10)
         display_results(top_10)
