@@ -1,5 +1,7 @@
 # finola miqailla
-# 04/29/2025
+# 05/16/2025
+# fetches book title name from local database and shows top 10 most used words. alternatively, uses a link given
+# by a user and shows top 10 most used words, while updating the information to the local database
 
 import re
 import sqlite3
